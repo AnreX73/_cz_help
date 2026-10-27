@@ -1,0 +1,48 @@
+# --- Node / Vite ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# --- Логи ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# --- Tauri / Rust ---
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.cargo/
+src-tauri/target-bundles/
+src-tauri/tmp/
+
+# --- Тесты и покрытие ---
+coverage/
+.nyc_output/
+
+# --- ОС ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Редакторы / IDE ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+*.suo
+*.swp
+*.swo
+
+# --- Переменные окружения и секреты ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
