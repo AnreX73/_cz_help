@@ -30,6 +30,14 @@ const uid = () => `i${++uidCounter}`;
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp)$/i;
 
+const LEGAL_TITLE = "Важная правовая информация для покупателя:";
+const LEGAL_BODY =
+  "Настоящий документ подготовлен исключительно для удобства клиента, носит информационный характер и не является первичным учётным или расчётным документом.";
+const RECEIPT_LEGAL_NOTE =
+  "Данный чек является официальным подтверждением оплаты и предоставления услуги и сформирован в соответствии со ст. 14 Федерального закона № 422-ФЗ в приложении «Мой налог».";
+const PENDING_TEXT =
+  "Чек НПД не приложен по техническим причинам (отсутствие интернет-соединения, отсутствие связи с порталом «Мой налог» и прочее). Обязуюсь направить чек покупателю по электронной почте или в приложении «MAX» сразу после решения технических проблем.";
+
 export function isReceiptFile(path) {
   return IMAGE_EXT.test(path ?? "");
 }
@@ -77,6 +85,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
 
   let receipt = null;
   let receiptError = "";
+  let receiptPending = Boolean(document?.receiptPending);
   let lastPdf = null;
   let previewSeq = 0;
   let lastPreviewWidth = 0;
@@ -131,8 +140,41 @@ export async function openWizard({ initialPath = null, document = null, repeat =
   const receiptZone = el("div");
   let receiptBusy = false;
 
+  const pendingCheck = el("input", { type: "checkbox" });
+  pendingCheck.checked = receiptPending;
+  pendingCheck.addEventListener("change", () => {
+    receiptPending = pendingCheck.checked;
+    schedulePreview();
+  });
+
+  const pendingBox = el(
+    "label",
+    { class: "pending-receipt" },
+    pendingCheck,
+    el(
+      "span",
+      { class: "pending-receipt__text" },
+      el(
+        "span",
+        { class: "pending-receipt__title" },
+        "Чек не добавлен по техническим причинам",
+      ),
+      el("span", { class: "pending-receipt__hint" }, PENDING_TEXT),
+    ),
+  );
+
+  function syncPendingState() {
+    if (receipt) {
+      receiptPending = false;
+      pendingCheck.checked = false;
+    }
+    pendingCheck.disabled = Boolean(receipt);
+    pendingBox.style.display = receipt ? "none" : "";
+  }
+
   function renderReceipt() {
     receiptZone.innerHTML = "";
+    syncPendingState();
     if (receiptBusy) {
       receiptZone.appendChild(
         el(
@@ -150,7 +192,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
         { class: "dropzone" },
         el("span", { html: icon("upload"), style: { width: "22px", height: "22px", color: "var(--accent)" } }),
         el("div", { class: "dropzone__title" }, "Прикрепите чек из «Мой налог»"),
-        el("div", { class: "dropzone__text" }, "PNG или JPG. Номер и QR будут прочитаны автоматически."),
+        el("div", { class: "dropzone__text" }, "PNG или JPG. Номер и QR будут прочитаны автоматически. Если чека нет — отметьте причину ниже."),
       );
       zone.addEventListener("click", () => pickFile());
       receiptZone.appendChild(zone);
@@ -206,6 +248,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
       ),
     );
     receiptZone.appendChild(card);
+    receiptZone.appendChild(el("div", { class: "legal-note" }, RECEIPT_LEGAL_NOTE));
 
     if (receipt.linkedDocumentId && receipt.linkedDocumentId !== document?.id) {
       receiptZone.appendChild(
@@ -216,7 +259,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
           el(
             "div",
             {},
-            "Этот чек уже привязан к другому товарному чеку. Проверьте, не создаёте ли вы дубль.",
+            "Этот чек уже привязан к другой детализации заказа. Проверьте, не создаёте ли вы дубль.",
           ),
         ),
       );
@@ -580,14 +623,17 @@ export async function openWizard({ initialPath = null, document = null, repeat =
       buyerInn: buyerInnInput.value.trim(),
       note: noteInput.value.trim(),
       receiptFileId: receipt?.fileId ?? null,
+      receiptPending: receipt ? false : receiptPending,
       qrPayload: receipt?.payload ?? "",
       items: cleaned,
     };
   }
 
   function canPreview(input) {
+    const hasReceipt = Boolean(input.receiptFileId);
     return (
-      input.number.length > 0 &&
+      (hasReceipt || input.receiptPending) &&
+      (!hasReceipt || input.number.length > 0) &&
       input.docDate &&
       input.items.length > 0 &&
       input.items.every((it) => it.name.length > 0 && it.priceKop > 0 && it.qtyMilli > 0)
@@ -602,8 +648,10 @@ export async function openWizard({ initialPath = null, document = null, repeat =
       placeholder(
         receipt
           ? "Заполните номер и хотя бы одну позицию"
-          : "Прикрепите чек НПД и заполните позиции",
-        receipt ? "edit" : "qr",
+          : receiptPending
+            ? "Заполните дату и хотя бы одну позицию"
+            : "Прикрепите чек НПД или отметьте, что пришлёте его позже",
+        receipt || receiptPending ? "edit" : "qr",
       );
       previewStatus.textContent = "Предпросмотр появится автоматически";
       previewPages.textContent = "A4";
@@ -621,7 +669,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
       previewPages.textContent = `${pages} ${plural(pages, "страница", "страницы", "страниц")} · A4`;
       previewStatus.textContent = receipt
         ? "PDF с оригинальным чеком НПД"
-        : "PDF без блока чека НПД";
+        : "PDF без чека НПД, с примечанием для покупателя";
     } catch (e) {
       if (closed || seq !== previewSeq) return;
       lastPdf = null;
@@ -728,7 +776,12 @@ export async function openWizard({ initialPath = null, document = null, repeat =
     el(
       "div",
       { class: "section__head" },
-      el("div", { class: "section__title" }, "Чек НПД"),
+      el(
+        "div",
+        { class: "section__title" },
+        "Чек НПД ",
+        el("span", { class: "badge badge--outline" }, "необязательно"),
+      ),
       el(
         "div",
         { class: "section__actions" },
@@ -742,6 +795,19 @@ export async function openWizard({ initialPath = null, document = null, repeat =
     ),
     sellerBar,
     receiptZone,
+    pendingBox,
+  );
+
+  const legalNotice = el(
+    "div",
+    { class: "legal-note legal-note--warn" },
+    el("span", { class: "legal-note__mark" }, "⚠️"),
+    el(
+      "div",
+      {},
+      el("div", { class: "legal-note__title" }, LEGAL_TITLE),
+      el("div", {}, LEGAL_BODY),
+    ),
   );
 
   const detailsSection = el(
@@ -751,7 +817,11 @@ export async function openWizard({ initialPath = null, document = null, repeat =
     el(
       "div",
       { class: "settings-row" },
-      field("Номер чека НПД", numberInput, "Подставляется из QR"),
+      field(
+        "Номер чека НПД (если известен)",
+        numberInput,
+        "Подставляется из QR. Без чека можно не заполнять",
+      ),
       field("Дата", dateInput, "По умолчанию — сегодня"),
     ),
     el(
@@ -761,7 +831,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
       field("Покупатель", buyerNameInput),
     ),
     field("ИНН покупателя", buyerInnInput, "Необязательно"),
-    field("Примечание", noteInput, "Попадёт в документ, если заполнено"),
+    field("Комментарий", noteInput, "Попадёт в документ, если заполнено"),
   );
 
   const itemsSection = el(
@@ -802,6 +872,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
   const formCol = el(
     "div",
     { class: "wizard__form" },
+    legalNotice,
     receiptSection,
     detailsSection,
     itemsSection,
@@ -833,8 +904,8 @@ export async function openWizard({ initialPath = null, document = null, repeat =
   const errorEl = el("div", { class: "modal__error" });
 
   const modal = openModal({
-    title: editing ? "Товарный чек" : "Новый товарный чек",
-    sub: "Номер и QR берутся из чека «Мой налог» — документ будет дополнять его",
+    title: editing ? "Детализация заказа" : "Новая детализация заказа",
+    sub: "Официальное подтверждение оплаты — чек НПД. Его можно прикрепить сейчас или отправить покупателю позже",
     size: "full",
     body: wizard,
     onClose: () => {
@@ -855,12 +926,13 @@ export async function openWizard({ initialPath = null, document = null, repeat =
           onclick: async (e) => {
             errorEl.textContent = "";
             const input = buildInput();
-            if (!receipt?.fileId) {
-              errorEl.textContent = "Прикрепите чек НПД (PNG)";
+            if (!receipt?.fileId && !input.receiptPending) {
+              errorEl.textContent =
+                "Прикрепите чек НПД или отметьте, что чек не добавлен по техническим причинам";
               receiptZone.scrollIntoView({ behavior: "smooth", block: "center" });
               return;
             }
-            if (!input.number) {
+            if (receipt?.fileId && !input.number) {
               errorEl.textContent = "Укажите номер чека НПД";
               numberInput.focus();
               return;
@@ -890,7 +962,7 @@ export async function openWizard({ initialPath = null, document = null, repeat =
               const result = await api.saveDocument(input);
               closed = true;
               modal.close();
-              toast(`Товарный чек № ${input.number} сохранён`, {
+              toast(`Детализация заказа${input.number ? ` № ${input.number}` : ""} сохранена`, {
                 type: "success",
                 title: rub(cleaned.reduce((s, it) => s + Math.round((it.priceKop * it.qtyMilli) / 1000), 0)),
                 timeout: 9000,

@@ -170,7 +170,7 @@ export async function render(root) {
           "div",
           { class: "notice notice--warning" },
           el("div", { html: icon("alert") }),
-          el("div", {}, "Добавьте самозанятого, чтобы считать налог и печатать чеки."),
+          el("div", {}, "Добавьте самозанятого, чтобы считать налог и печатать детализацию заказов."),
         ),
       );
     }
@@ -241,7 +241,7 @@ export async function render(root) {
 
   const printCard = section(
     "Печать документов",
-    "Как собирать товарный чек",
+    "Как собирать детализацию заказа",
     el(
       "div",
       { class: "settings-row" },
@@ -257,6 +257,11 @@ export async function render(root) {
         {},
         "PDF сохраняется автоматически: ",
         el("code", {}, "Документы\\Чеки\\ГГГГ-ММ\\ДАТА_НОМЕР_ПОКУПАТЕЛЬ.pdf"),
+        el(
+          "div",
+          { class: "field__hint" },
+          "Без номера чека: ДАТА_Детализация_ЧЧММСС_ПОКУПАТЕЛЬ.pdf",
+        ),
       ),
     ),
   );

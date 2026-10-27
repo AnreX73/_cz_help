@@ -15,7 +15,7 @@ const DEFAULT_STATUS = "Плательщик налога на професси�
 export async function openSellersModal() {
   const modal = openModal({
     title: "Самозанятые",
-    sub: "Доходы, налог, вычет и чеки считаются по активному профилю",
+    sub: "Доходы, налог, вычет и детализация заказов считаются по активному профилю",
     size: "sm",
   });
 
@@ -160,7 +160,7 @@ export function openSellerForm({ seller = null, prefillInn = "", onSaved = null 
 
   const modal = openModal({
     title: editing ? "Изменить самозанятого" : "Новый самозанятый",
-    sub: editing ? "Документы сохранят прежние данные" : "Профиль для расчёта налога и печати чеков",
+    sub: editing ? "Документы сохранят прежние данные" : "Профиль для расчёта налога и печати детализации заказов",
     body,
   });
 
@@ -242,7 +242,7 @@ export function openSellerForm({ seller = null, prefillInn = "", onSaved = null 
             onclick: async () => {
               const ok = await confirmDialog({
                 title: "Удалить самозанятого?",
-                text: `Профиль «${seller.name}» будет удалён. Удаление возможно, только если у него нет доходов и чеков.`,
+                text: `Профиль «${seller.name}» будет удалён. Удаление возможно, только если у него нет доходов и детализаций заказов.`,
                 confirmText: "Удалить",
                 danger: true,
               });

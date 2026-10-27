@@ -695,7 +695,7 @@ pub fn receipt_thumb_data_url(state: State<'_, AppState>, file_id: i64) -> R<Str
     import::thumbnail_data_url(&state.attachments_dir.join(rel), 140)
 }
 
-// ---------- товарные чеки ----------
+// ---------- детализация заказа ----------
 
 fn receipt_payload(doc: &Document) -> Option<String> {
     if !doc.qr_payload.trim().is_empty() {
@@ -712,7 +712,7 @@ fn receipt_payload(doc: &Document) -> Option<String> {
 
 fn build_document(input: &DocumentInput, settings: &Settings, seller: &Seller) -> R<Document> {
     let number = input.number.trim();
-    if number.is_empty() {
+    if number.is_empty() && input.receipt_file_id.is_some() {
         return Err("Укажите номер чека НПД".into());
     }
     if !valid_date(&input.doc_date) {
@@ -775,6 +775,7 @@ fn build_document(input: &DocumentInput, settings: &Settings, seller: &Seller) -
             .unwrap_or_else(|| seller.inn.clone()),
         receipt_file_id: input.receipt_file_id,
         receipt_path: None,
+        receipt_pending: input.receipt_pending && input.receipt_file_id.is_none(),
         qr_payload: input.qr_payload.trim().to_string(),
         created_at: String::new(),
         items,
@@ -852,7 +853,22 @@ fn pdf_path_for(
     } else {
         "без-даты".to_string()
     };
-    let mut name = format!("{}_{}", doc.doc_date, safe_filename(&doc.number));
+    let mut name = if doc.number.trim().is_empty() {
+        // Без чека НПД номера ещё нет — используем дату и время создания,
+        // чтобы документы за один день не перезаписывали друг друга.
+        let time = doc
+            .created_at
+            .get(11..19)
+            .map(|t| t.replace(':', ""))
+            .unwrap_or_default();
+        if time.is_empty() {
+            format!("{}_Детализация", doc.doc_date)
+        } else {
+            format!("{}_Детализация_{}", doc.doc_date, time)
+        }
+    } else {
+        format!("{}_{}", doc.doc_date, safe_filename(&doc.number))
+    };
     if !doc.buyer_name.is_empty() {
         name.push('_');
         name.push_str(&safe_filename(&doc.buyer_name));
@@ -909,9 +925,12 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
     let conn = lock(&state)?;
     let settings = db::load_settings(&conn);
     let seller = db::active_seller(&conn).map_err(to_err)?;
-    let doc = build_document(&input, &settings, &seller)?;
-    if doc.receipt_file_id.is_none() {
-        return Err("Прикрепите чек НПД (PNG), чтобы номер и QR совпадали с документом".into());
+    let mut doc = build_document(&input, &settings, &seller)?;
+    if doc.receipt_file_id.is_none() && !doc.receipt_pending {
+        return Err(
+            "Прикрепите чек НПД (PNG) или отметьте, что чек не добавлен по техническим причинам"
+                .into(),
+        );
     }
     if doc.seller_inn.is_empty() {
         return Err("Заполните ИНН самозанятого в профиле".into());
@@ -930,9 +949,14 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
             if old.seller_id != seller.id {
                 return Err("Документ относится к другому самозанятому".into());
             }
+            // Сохраняем дату создания: от неё зависит имя PDF у документа без номера.
+            doc.created_at = old.created_at.clone();
             Some(pdf_path_for(&conn, &state, &settings, &old))
         }
-        None => None,
+        None => {
+            doc.created_at = db::now_ts();
+            None
+        }
     };
 
     // PDF пишем до записи в базу: если файл открыт в просмотрщике и не
@@ -945,7 +969,7 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
             conn.execute(
                 "UPDATE documents SET number = ?1, doc_date = ?2, buyer_name = ?3, buyer_inn = ?4, \
                  total_kop = ?5, note = ?6, seller_name = ?7, seller_inn = ?8, receipt_file_id = ?9, \
-                 qr_payload = ?10, updated_at = ?11 WHERE id = ?12",
+                 receipt_pending = ?10, qr_payload = ?11, updated_at = ?12 WHERE id = ?13",
                 params![
                     doc.number,
                     doc.doc_date,
@@ -956,6 +980,7 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
                     doc.seller_name,
                     doc.seller_inn,
                     doc.receipt_file_id,
+                    doc.receipt_pending,
                     doc.qr_payload,
                     now,
                     id
@@ -969,8 +994,8 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
         None => {
             conn.execute(
                 "INSERT INTO documents (seller_id, number, doc_date, buyer_name, buyer_inn, total_kop, note, \
-                 seller_name, seller_inn, receipt_file_id, qr_payload, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+                 seller_name, seller_inn, receipt_file_id, receipt_pending, qr_payload, created_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     doc.seller_id,
                     doc.number,
@@ -982,7 +1007,9 @@ pub fn save_document(state: State<'_, AppState>, input: DocumentInput) -> R<serd
                     doc.seller_name,
                     doc.seller_inn,
                     doc.receipt_file_id,
+                    doc.receipt_pending,
                     doc.qr_payload,
+                    doc.created_at,
                     now
                 ],
             )

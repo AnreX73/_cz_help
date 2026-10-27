@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS documents (
     seller_name     TEXT NOT NULL DEFAULT '',
     seller_inn      TEXT NOT NULL DEFAULT '',
     receipt_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    receipt_pending INTEGER NOT NULL DEFAULT 0,
     qr_payload      TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
@@ -149,6 +150,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     if !has_column(conn, "documents", "seller_id")? {
         conn.execute_batch("ALTER TABLE documents ADD COLUMN seller_id INTEGER NOT NULL DEFAULT 0")?;
+    }
+    if !has_column(conn, "documents", "receipt_pending")? {
+        conn.execute_batch(
+            "ALTER TABLE documents ADD COLUMN receipt_pending INTEGER NOT NULL DEFAULT 0",
+        )?;
     }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_entries_seller_date ON entries(seller_id, date);
@@ -901,7 +907,7 @@ pub fn document_items(conn: &Connection, document_id: i64) -> rusqlite::Result<V
 pub fn get_document(conn: &Connection, id: i64) -> rusqlite::Result<Document> {
     let mut doc = conn.query_row(
         "SELECT d.id, d.seller_id, d.number, d.doc_date, d.buyer_name, d.buyer_inn, d.total_kop, d.note, \
-         d.seller_name, d.seller_inn, d.receipt_file_id, d.qr_payload, f.rel_path, d.created_at \
+         d.seller_name, d.seller_inn, d.receipt_file_id, d.receipt_pending, d.qr_payload, f.rel_path, d.created_at \
          FROM documents d LEFT JOIN files f ON f.id = d.receipt_file_id WHERE d.id = ?1",
         params![id],
         |row| {
@@ -917,9 +923,10 @@ pub fn get_document(conn: &Connection, id: i64) -> rusqlite::Result<Document> {
                 seller_name: row.get(8)?,
                 seller_inn: row.get(9)?,
                 receipt_file_id: row.get(10)?,
-                qr_payload: row.get(11)?,
-                receipt_path: row.get(12)?,
-                created_at: row.get(13)?,
+                receipt_pending: row.get(11)?,
+                qr_payload: row.get(12)?,
+                receipt_path: row.get(13)?,
+                created_at: row.get(14)?,
                 items: Vec::new(),
             })
         },
@@ -937,7 +944,7 @@ pub fn list_documents(
     let like = format!("%{}%", search.unwrap_or("").trim());
     let mut stmt = conn.prepare(
         "SELECT d.id, d.seller_id, d.number, d.doc_date, d.buyer_name, d.buyer_inn, d.total_kop, d.note, \
-         d.seller_name, d.seller_inn, d.receipt_file_id, d.qr_payload, f.rel_path, d.created_at \
+         d.seller_name, d.seller_inn, d.receipt_file_id, d.receipt_pending, d.qr_payload, f.rel_path, d.created_at \
          FROM documents d LEFT JOIN files f ON f.id = d.receipt_file_id \
          WHERE d.seller_id = ?1 AND (?2 = '%%' OR d.number LIKE ?2 OR d.buyer_name LIKE ?2) \
          ORDER BY d.doc_date DESC, d.id DESC LIMIT ?3",
@@ -956,9 +963,10 @@ pub fn list_documents(
                 seller_name: row.get(8)?,
                 seller_inn: row.get(9)?,
                 receipt_file_id: row.get(10)?,
-                qr_payload: row.get(11)?,
-                receipt_path: row.get(12)?,
-                created_at: row.get(13)?,
+                receipt_pending: row.get(11)?,
+                qr_payload: row.get(12)?,
+                receipt_path: row.get(13)?,
+                created_at: row.get(14)?,
                 items: Vec::new(),
             })
         })?
@@ -1131,6 +1139,7 @@ mod tests {
         let docs = list_documents(&conn, seller.id, None, 10).unwrap();
         assert_eq!(docs.len(), 1);
         assert_eq!(docs[0].seller_id, seller.id);
+        assert!(!docs[0].receipt_pending, "у старых документов отметка не должна появляться");
 
         let paid: i64 = conn
             .query_row(

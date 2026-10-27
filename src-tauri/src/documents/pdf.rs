@@ -22,6 +22,19 @@ const C_TEXT: (f32, f32, f32) = (0.055, 0.09, 0.15);
 const C_MUTED: (f32, f32, f32) = (0.42, 0.47, 0.53);
 const C_LINE: (f32, f32, f32) = (0.78, 0.81, 0.85);
 const C_HEAD_BG: (f32, f32, f32) = (0.949, 0.957, 0.969);
+const C_ACCENT: (f32, f32, f32) = (0.78, 0.48, 0.09);
+
+const LEGAL_TITLE: &str = "Важная правовая информация для покупателя:";
+const LEGAL_BODY: &str = "Настоящий документ подготовлен исключительно для удобства клиента, \
+носит информационный характер и не является первичным учётным или расчётным документом.";
+const RECEIPT_NOTE: &str = "Данный чек является официальным подтверждением оплаты и \
+предоставления услуги и сформирован в соответствии со ст. 14 Федерального закона № 422-ФЗ \
+в приложении «Мой налог».";
+const PENDING_TITLE: &str = "Чек НПД не приложен";
+const PENDING_BODY: &str = "Чек НПД не приложен по техническим причинам \
+(отсутствие интернет-соединения, отсутствие связи с порталом «Мой налог» и прочее). \
+Обязуюсь направить чек покупателю по электронной почте или в приложении «MAX» \
+сразу после решения технических проблем.";
 
 pub struct ReceiptImage {
     pub width: usize,
@@ -214,9 +227,11 @@ impl<'f> Painter<'f> {
 
     fn fill_rect(&mut self, x: f32, top: f32, w: f32, h: f32, c: (f32, f32, f32)) {
         self.ops.push(Op::SetFillColor { col: color(c) });
-        self.ops.push(Op::DrawRectangle {
-            rectangle: printpdf::Rect::from_xywh(mm(x), mm(PAGE_H - top - h), mm(w), mm(h)),
-        });
+        // В printpdf 0.12 у `Rect` по умолчанию `mode: None`, из-за чего
+        // прямоугольник сериализуется как `re n` и ничего не рисует.
+        let mut rectangle = printpdf::Rect::from_xywh(mm(x), mm(PAGE_H - top - h), mm(w), mm(h));
+        rectangle.mode = Some(printpdf::PaintMode::Fill);
+        self.ops.push(Op::DrawRectangle { rectangle });
     }
 
     fn hline(&mut self, x1: f32, x2: f32, top: f32, weight: f32, c: (f32, f32, f32)) {
@@ -301,6 +316,7 @@ struct Metrics {
     line_h: f32,
     pad_v: f32,
     head_h: f32,
+    legal: f32,
 }
 
 impl Metrics {
@@ -315,8 +331,110 @@ impl Metrics {
             line_h: 4.1 * scale,
             pad_v: 2.2 * scale,
             head_h: 7.6 * scale,
+            legal: (7.4 * scale).max(6.4),
         }
     }
+}
+
+fn legal_note_height(fonts: &Fonts, m: &Metrics) -> f32 {
+    let title_lines = wrap_text(
+        &|t, s| fonts.measure(t, s, false),
+        LEGAL_TITLE,
+        m.legal,
+        CONTENT_W,
+    )
+    .len();
+    let body_lines = wrap_text(
+        &|t, s| fonts.measure(t, s, false),
+        LEGAL_BODY,
+        m.legal - 0.2,
+        CONTENT_W,
+    )
+    .len();
+    title_lines as f32 * 4.0 * m.scale + body_lines as f32 * 3.7 * m.scale + 1.8
+}
+
+fn draw_legal_note(p: &mut Painter, top: f32, m: &Metrics) -> f32 {
+    let mut y = top;
+    for line in wrap_text(
+        &|t, s| p.fonts.measure(t, s, false),
+        LEGAL_TITLE,
+        m.legal,
+        CONTENT_W,
+    ) {
+        p.text(MARGIN_X, y, &line, m.legal, true, C_TEXT);
+        y += 4.0 * m.scale;
+    }
+    y += 0.8;
+    for line in wrap_text(
+        &|t, s| p.fonts.measure(t, s, false),
+        LEGAL_BODY,
+        m.legal - 0.2,
+        CONTENT_W,
+    ) {
+        p.text(MARGIN_X, y, &line, m.legal - 0.2, false, C_MUTED);
+        y += 3.7 * m.scale;
+    }
+    y + 1.0
+}
+
+fn receipt_note_height(fonts: &Fonts, m: &Metrics, width: f32) -> f32 {
+    let lines = wrap_text(
+        &|t, s| fonts.measure(t, s, false),
+        RECEIPT_NOTE,
+        m.legal - 0.2,
+        width,
+    )
+    .len();
+    lines as f32 * 3.7 * m.scale + 1.0
+}
+
+fn draw_receipt_note(p: &mut Painter, top: f32, m: &Metrics, width: f32) -> f32 {
+    let mut y = top;
+    for line in wrap_text(
+        &|t, s| p.fonts.measure(t, s, false),
+        RECEIPT_NOTE,
+        m.legal - 0.2,
+        width,
+    ) {
+        p.text(MARGIN_X, y, &line, m.legal - 0.2, false, C_MUTED);
+        y += 3.7 * m.scale;
+    }
+    y + 1.0
+}
+
+fn receipt_chrome_height(fonts: &Fonts, m: &Metrics) -> f32 {
+    6.5 + receipt_note_height(fonts, m, CONTENT_W) + 3.0 + 4.0
+}
+
+fn pending_note_height(fonts: &Fonts, m: &Metrics) -> f32 {
+    let lines = wrap_text(
+        &|t, s| fonts.measure(t, s, false),
+        PENDING_BODY,
+        m.legal,
+        CONTENT_W - 12.0,
+    )
+    .len();
+    5.0 + 4.8 * m.scale + lines as f32 * 3.7 * m.scale + 4.0
+}
+
+fn draw_pending_note(p: &mut Painter, top: f32, m: &Metrics) -> f32 {
+    let h = pending_note_height(p.fonts, m);
+    p.fill_rect(MARGIN_X, top, CONTENT_W, h, C_HEAD_BG);
+    p.fill_rect(MARGIN_X, top, 1.2, h, C_ACCENT);
+    let mut y = top + 5.0;
+    p.text(MARGIN_X + 5.0, y, PENDING_TITLE, m.detail, true, C_TEXT);
+    y += 4.8 * m.scale;
+    for line in wrap_text(
+        &|t, s| p.fonts.measure(t, s, false),
+        PENDING_BODY,
+        m.legal,
+        CONTENT_W - 12.0,
+    ) {
+        p.text(MARGIN_X + 5.0, y, &line, m.legal, false, C_TEXT);
+        y += 3.7 * m.scale;
+    }
+    top + h
 }
 
 /// Высота содержимого без блока чека.
@@ -325,9 +443,12 @@ fn content_height(
     doc: &Document,
     seller: &Seller,
     m: &Metrics,
+    show_pending: bool,
 ) -> f32 {
     let mut y = MARGIN_TOP;
-    y += 6.5 + 6.0;
+    y += 6.5 + 5.0;
+    y += legal_note_height(fonts, m);
+    y += 5.0;
     y += m.label * 0.64 + 0.8 + 4.6 * m.scale; // метка + имя продавца
 
     let seller_inn = if doc.seller_inn.is_empty() { &seller.inn } else { &doc.seller_inn };
@@ -380,6 +501,10 @@ fn content_height(
     let words = format!("Сумма прописью: {}", amount_in_words(doc.total_kop));
     let words_lines = wrap_text(&|t, s| fonts.measure(t, s, false), &words, m.detail, CONTENT_W).len();
     y += words_lines as f32 * 4.2;
+    if show_pending {
+        y += 4.0;
+        y += pending_note_height(fonts, m);
+    }
     y += 8.0 + 3.0;
     y + 2.0
 }
@@ -393,7 +518,7 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
         "руб."
     };
 
-    let mut pdf = PdfDocument::new("Товарный чек");
+    let mut pdf = PdfDocument::new("Детализация заказа");
     let parsed_regular = printpdf::ParsedFont::from_bytes(FONT_REGULAR, 0, &mut Vec::new())
         .ok_or_else(|| "Не удалось разобрать шрифт PT Sans".to_string())?;
     let parsed_bold = printpdf::ParsedFont::from_bytes(FONT_BOLD, 0, &mut Vec::new())
@@ -420,12 +545,17 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
     let scales = [1.0f32, 0.94, 0.88, 0.82, 0.76];
     let min_width = base_width.min(60.0);
     let mut chosen: Option<(f32, f32)> = None;
+    let show_pending = input.receipt.is_none();
     let mut rw = base_width;
     'outer: loop {
         for scale in &scales {
             let m = Metrics::new(*scale);
-            let content = content_height(&fonts, doc, seller, &m);
-            let block = if input.receipt.is_some() { rw * ratio + 12.0 } else { 0.0 };
+            let content = content_height(&fonts, doc, seller, &m, show_pending);
+            let block = if input.receipt.is_some() {
+                rw * ratio + receipt_chrome_height(&fonts, &m)
+            } else {
+                0.0
+            };
             if content + 10.0 <= PAGE_H - MARGIN_BOTTOM - block {
                 chosen = Some((*scale, rw));
                 break 'outer;
@@ -466,7 +596,7 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
     y += m.head_h;
 
     let bottom = PAGE_H - MARGIN_BOTTOM;
-    let reserve = totals_height(&fonts, doc, &m) + 6.0;
+    let reserve = totals_height(&fonts, doc, &m, show_pending) + 6.0;
 
     for (idx, item) in doc.items.iter().enumerate() {
         let lines = wrap_text(&|t, s| p.fonts.measure(t, s, false), &item.name, m.name, columns()[1].1 - 1.0);
@@ -475,15 +605,26 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
             page_ops.push(std::mem::take(&mut p.ops));
             p = Painter::new(&fonts);
             y = MARGIN_TOP;
-            p.text(MARGIN_X, y, "Товарный чек — продолжение", m.detail, true, C_MUTED);
-            p.text_right(
-                PAGE_W - MARGIN_X,
-                y,
-                &format!("№ {}", doc.number),
-                m.detail,
-                false,
-                C_MUTED,
-            );
+            p.text(MARGIN_X, y, "Детализация заказа — продолжение", m.detail, true, C_MUTED);
+            if doc.number.trim().is_empty() {
+                p.text_right(
+                    PAGE_W - MARGIN_X,
+                    y,
+                    &format!("от {}", ru_date(&doc.doc_date)),
+                    m.detail,
+                    false,
+                    C_MUTED,
+                );
+            } else {
+                p.text_right(
+                    PAGE_W - MARGIN_X,
+                    y,
+                    &format!("№ {}", doc.number),
+                    m.detail,
+                    false,
+                    C_MUTED,
+                );
+            }
             y += 6.0;
             draw_table_head(&mut p, y, &m);
             y += m.head_h;
@@ -507,12 +648,13 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
         } else {
             &doc.seller_name
         },
+        show_pending,
     );
 
     // Блок чека НПД: внизу страницы, а если места нет — на отдельной странице.
     if let Some(image_id) = receipt_id {
         let receipt_h = receipt_w * ratio;
-        let block_h = receipt_h + 14.0;
+        let block_h = receipt_h + receipt_chrome_height(&fonts, &m);
         if receipt_own_page || y + 10.0 + block_h > bottom {
             page_ops.push(std::mem::take(&mut p.ops));
             p = Painter::new(&fonts);
@@ -547,19 +689,32 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
 fn draw_header(p: &mut Painter, doc: &Document, seller: &Seller, m: &Metrics) -> f32 {
     let scale = m.scale;
     let mut y = MARGIN_TOP;
-    p.text(MARGIN_X, y, "Товарный чек", 15.0 * scale.max(0.9), true, C_TEXT);
-    p.text_right(PAGE_W - MARGIN_X, y - 0.4, &format!("№ {}", doc.number), 12.0 * scale, true, C_TEXT);
-    p.text_right(
-        PAGE_W - MARGIN_X,
-        y + 5.0,
-        &format!("от {}", ru_date(&doc.doc_date)),
-        8.5 * scale,
-        false,
-        C_MUTED,
-    );
+    p.text(MARGIN_X, y, "Детализация заказа", 15.0 * scale.max(0.9), true, C_TEXT);
+    if doc.number.trim().is_empty() {
+        p.text_right(
+            PAGE_W - MARGIN_X,
+            y + 0.4,
+            &format!("от {}", ru_date(&doc.doc_date)),
+            8.5 * scale,
+            false,
+            C_MUTED,
+        );
+    } else {
+        p.text_right(PAGE_W - MARGIN_X, y - 0.4, &format!("№ {}", doc.number), 12.0 * scale, true, C_TEXT);
+        p.text_right(
+            PAGE_W - MARGIN_X,
+            y + 5.0,
+            &format!("от {}", ru_date(&doc.doc_date)),
+            8.5 * scale,
+            false,
+            C_MUTED,
+        );
+    }
     y += 6.5;
     p.hline(MARGIN_X, PAGE_W - MARGIN_X, y, 0.35, C_LINE);
-    y += 6.0;
+    y += 5.0;
+    y = draw_legal_note(p, y, m);
+    y += 5.0;
 
     p.text(MARGIN_X, y, "ПРОДАВЕЦ", m.label, true, C_MUTED);
     y += m.label * 0.64 + 0.8;
@@ -666,10 +821,14 @@ fn draw_item_row(
     next
 }
 
-fn totals_height(fonts: &Fonts, doc: &Document, m: &Metrics) -> f32 {
+fn totals_height(fonts: &Fonts, doc: &Document, m: &Metrics, show_pending: bool) -> f32 {
     let words = format!("Сумма прописью: {}", amount_in_words(doc.total_kop));
     let words_lines = wrap_text(&|t, s| fonts.measure(t, s, false), &words, m.detail, CONTENT_W).len();
-    7.2 + 5.2 + 6.2 + 5.2 + words_lines as f32 * 4.2 + 8.0 + 3.0
+    let mut h = 7.2 + 5.2 + 6.2 + 5.2 + words_lines as f32 * 4.2;
+    if show_pending {
+        h += 4.0 + pending_note_height(fonts, m);
+    }
+    h + 8.0 + 3.0
 }
 
 fn draw_totals(
@@ -679,6 +838,7 @@ fn draw_totals(
     m: &Metrics,
     currency: &str,
     seller: &str,
+    show_pending: bool,
 ) -> f32 {
     let mut y = y + 7.2;
     p.text_right(PAGE_W - MARGIN_X - 38.0, y, "Итого:", m.body, true, C_TEXT);
@@ -707,6 +867,11 @@ fn draw_totals(
     for line in wrap_text(&|t, s| p.fonts.measure(t, s, false), &words, m.detail, CONTENT_W) {
         p.text(MARGIN_X, y, &line, m.detail, false, C_MUTED);
         y += 4.2;
+    }
+
+    if show_pending {
+        y += 4.0;
+        y = draw_pending_note(p, y, m);
     }
 
     y += 8.0;
@@ -749,7 +914,7 @@ fn receipt_footer(p: &mut Painter, m: &Metrics) {
     p.text(
         MARGIN_X,
         PAGE_H - MARGIN_BOTTOM - 1.0,
-        "Товарный чек сформирован в дополнение к чеку НПД.",
+        "Детализация заказа сформирована в дополнение к чеку НПД.",
         m.detail - 1.6,
         false,
         C_MUTED,
@@ -766,18 +931,19 @@ fn draw_receipt_inline(
     px_h: usize,
 ) {
     let receipt_h = receipt_w * px_h as f32 / px_w as f32;
-    let block_h = receipt_h + 14.0;
+    let block_h = receipt_h + receipt_chrome_height(p.fonts, m);
     let top = PAGE_H - MARGIN_BOTTOM - block_h;
     p.hline(MARGIN_X, PAGE_W - MARGIN_X, top - 5.0, 0.35, C_LINE);
     p.text(
         MARGIN_X,
-        top - 1.2,
+        top + 2.5,
         "Чек, сформированный в приложении «Мой налог»",
         m.detail,
         true,
         C_TEXT,
     );
-    let img_top = top + 3.2;
+    let note_end = draw_receipt_note(p, top + 6.5, m, CONTENT_W);
+    let img_top = note_end + 3.0;
     p.image(image_id, MARGIN_X, img_top, receipt_w, px_w, px_h);
     draw_qr(p, qr, MARGIN_X + receipt_w + 10.0, img_top + 2.0, m);
     receipt_footer(p, m);
@@ -806,12 +972,14 @@ fn draw_receipt_page(
     p.text(
         MARGIN_X,
         y,
-        &format!("К товарному чеку № {} от {}", doc.number, ru_date(&doc.doc_date)),
+        &format!("К детализации заказа № {} от {}", doc.number, ru_date(&doc.doc_date)),
         m.detail,
         false,
         C_MUTED,
     );
     y += 5.0;
+    y = draw_receipt_note(p, y, m, CONTENT_W);
+    y += 3.0;
     p.image(image_id, MARGIN_X, y, receipt_w, px_w, px_h);
     draw_qr(p, qr, MARGIN_X + receipt_w + 10.0, y + 2.0, m);
     receipt_footer(p, m);
@@ -876,6 +1044,7 @@ mod tests {
             seller_inn: "540230136541".into(),
             receipt_file_id: Some(1),
             receipt_path: None,
+            receipt_pending: false,
             qr_payload: "https://lknpd.nalog.ru/api/v1/receipt/540230136541/23cgmf8snp/print".into(),
             created_at: String::new(),
             items: (0..items)
@@ -928,6 +1097,29 @@ mod tests {
             })
             .unwrap_or_else(|e| panic!("{items} позиций: {e}"));
             assert!(bytes.len() > 5_000, "{items} позиций: PDF слишком мал");
+        }
+    }
+
+    #[test]
+    fn builds_document_without_receipt_and_number() {
+        for items in [1usize, 5, 30] {
+            let mut doc = test_document(items);
+            doc.number = String::new();
+            doc.qr_payload = String::new();
+            doc.receipt_file_id = None;
+            doc.receipt_pending = true;
+            doc.total_kop = doc.items.iter().map(|i| i.sum_kop).sum();
+            let settings = Settings::default();
+            let seller = test_seller();
+            let bytes = build(BuildInput {
+                doc: &doc,
+                settings: &settings,
+                seller: &seller,
+                receipt: None,
+                qr_payload: None,
+            })
+            .unwrap_or_else(|e| panic!("без чека, {items} позиций: {e}"));
+            assert!(bytes.len() > 5_000, "без чека, {items} позиций: PDF слишком мал");
         }
     }
 }

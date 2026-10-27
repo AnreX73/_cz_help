@@ -43,8 +43,8 @@ export async function render(root) {
   const seller = d.seller;
   if (!seller?.name || !seller?.inn) {
     const text = !seller?.name
-      ? "Профиль не заполнен: укажите имя и ИНН — они попадут в товарные чеки. "
-      : "У профиля не заполнен ИНН — без него нельзя сохранить товарный чек. ";
+      ? "Профиль не заполнен: укажите имя и ИНН — они попадут в детализацию заказа. "
+      : "У профиля не заполнен ИНН — без него нельзя сохранить детализацию заказа. ";
     wrap.appendChild(
       el(
         "div",
@@ -264,7 +264,7 @@ export async function render(root) {
     el(
       "div",
       { class: "quick" },
-      quickButton("receipt", "Товарный чек", "С чеком НПД", () => openWizard({ onSaved: () => render(root) })),
+      quickButton("receipt", "Детализация заказа", "С чеком или без", () => openWizard({ onSaved: () => render(root) })),
       quickButton("plus", "Доход", "Новая операция", () => openEntryModal({ onSaved: () => render(root) })),
       quickButton("users", "Клиенты", "Справочник", () => navigate("clients")),
       quickButton("chart", "Отчёты", "Сводка за год", () => navigate("reports")),

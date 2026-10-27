@@ -23,8 +23,8 @@ let search = "";
 
 export async function render(root) {
   setHeader({
-    title: "Товарные чеки",
-    sub: "Документы с прикреплённым чеком «Мой налог»",
+    title: "Детализация заказов",
+    sub: "Документы для покупателя: детализация заказа и чек «Мой налог»",
     actions: el(
       "button",
       {
@@ -36,7 +36,7 @@ export async function render(root) {
         },
       },
       el("span", { html: icon("plus") }),
-      "Новый чек",
+      "Новая детализация",
     ),
   });
 
@@ -45,7 +45,7 @@ export async function render(root) {
   const searchInput = el("input", {
     class: "input",
     type: "search",
-    placeholder: "Номер чека или покупатель",
+    placeholder: "Номер или покупатель",
     value: search,
   });
   const statsEl = el("div", { class: "small muted" });
@@ -96,10 +96,10 @@ export async function render(root) {
           { class: "card" },
           emptyState({
             iconName: "receipt",
-            title: search ? "Ничего не найдено" : "Товарных чеков пока нет",
+            title: search ? "Ничего не найдено" : "Детализаций заказов пока нет",
             text: search
               ? "Попробуйте изменить запрос."
-              : "Создайте первый документ: прикрепите PNG-чек из «Мой налог», добавьте позиции — PDF соберётся автоматически.",
+              : "Создайте первый документ: прикрепите чек «Мой налог» или отметьте, что пришлёте его покупателю позже.",
             action: search
               ? null
               : el(
@@ -110,7 +110,7 @@ export async function render(root) {
                       await openWizard({ onSaved: () => refresh() });
                     },
                   },
-                  "Создать товарный чек",
+                  "Создать детализацию заказа",
                 ),
           }),
         ),
@@ -183,11 +183,14 @@ export async function render(root) {
               title: "Открыть PDF",
               onclick: () => openPdf(doc),
             },
-            `№ ${doc.number}`,
+            doc.number ? `№ ${doc.number}` : "Без номера чека",
           ),
           el("span", { class: "badge badge--outline" }, dateRu(doc.docDate)),
           doc.items.length > 0
             ? el("span", { class: "badge" }, `${doc.items.length} ${itemsWord(doc.items.length)}`)
+            : null,
+          doc.receiptPending || !doc.receiptFileId
+            ? el("span", { class: "badge badge--warning" }, "Чек ожидается")
             : null,
         ),
         el(
@@ -216,7 +219,7 @@ export async function render(root) {
           "button",
           {
             class: "btn btn--ghost btn--icon btn--sm",
-            title: "Повторить с новым чеком",
+            title: "Повторить документ",
             onclick: async () => {
               await openWizard({
                 repeat: {
@@ -254,8 +257,10 @@ export async function render(root) {
             title: "Удалить",
             onclick: async () => {
               const ok = await confirmDialog({
-                title: "Удалить товарный чек?",
-                text: `Документ № ${doc.number} от ${dateRu(doc.docDate)} будет удалён. Чек НПД останется в базе.`,
+                title: "Удалить детализацию заказа?",
+                text: doc.number
+                  ? `Документ № ${doc.number} от ${dateRu(doc.docDate)} будет удалён. Чек НПД останется в базе.`
+                  : `Детализация заказа от ${dateRu(doc.docDate)} будет удалена. Чек НПД останется в базе.`,
                 confirmText: "Удалить",
                 danger: true,
               });

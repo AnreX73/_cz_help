@@ -15,7 +15,7 @@ const NAV = [
     items: [
       { route: "dashboard", label: "Обзор", icon: "grid" },
       { route: "income", label: "Доходы", icon: "wallet" },
-      { route: "documents", label: "Товарные чеки", icon: "receipt" },
+      { route: "documents", label: "Детализация заказов", icon: "receipt" },
     ],
   },
   {
@@ -67,7 +67,7 @@ export function mountShell() {
         "div",
         { class: "brand__text" },
         el("span", { class: "brand__title" }, "Помощник самозанятого"),
-        el("span", { class: "brand__sub" }, "НПД · товарные чеки"),
+        el("span", { class: "brand__sub" }, "НПД · детализация заказов"),
       ),
     ),
   );

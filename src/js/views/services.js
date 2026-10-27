@@ -36,7 +36,7 @@ export async function render(root) {
   );
   setHeader({
     title: "Услуги",
-    sub: "Шаблоны позиций для товарных чеков",
+    sub: "Шаблоны позиций для детализации заказа",
     actions: [headerCategories, headerNew],
   });
 
@@ -66,7 +66,7 @@ export async function render(root) {
       el(
         "div",
         {},
-        "Этот справочник подставляется в мастер товарного чека. Цены можно менять при каждом документе.",
+        "Этот справочник подставляется в мастер детализации заказа. Цены можно менять при каждом документе.",
       ),
     ),
     toolbar,
@@ -295,7 +295,7 @@ export async function render(root) {
               e.stopPropagation();
               const ok = await confirmDialog({
                 title: "Удалить услугу?",
-                text: `«${service.name}» исчезнет из каталога. В уже созданных чеках она останется.`,
+                text: `«${service.name}» исчезнет из каталога. В уже созданных детализациях она останется.`,
                 confirmText: "Удалить",
                 danger: true,
               });
@@ -637,7 +637,7 @@ async function openServiceModal({ service = null, onSaved = null } = {}) {
 
   const modal = openModal({
     title: service ? "Изменить услугу" : "Новая услуга",
-    sub: "Шаблон для товарного чека",
+    sub: "Шаблон для детализации заказа",
     body: el(
       "div",
       { class: "stack", style: { gap: "14px" } },

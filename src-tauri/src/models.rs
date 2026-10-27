@@ -180,6 +180,9 @@ pub struct Document {
     pub seller_inn: String,
     pub receipt_file_id: Option<i64>,
     pub receipt_path: Option<String>,
+    /// Чек НПД не приложен: продавец подтвердил, что пришлёт его покупателю
+    /// после устранения технических проблем.
+    pub receipt_pending: bool,
     pub qr_payload: String,
     pub created_at: String,
     pub items: Vec<DocumentItem>,
@@ -199,6 +202,8 @@ pub struct DocumentInput {
     pub note: String,
     #[serde(default)]
     pub receipt_file_id: Option<i64>,
+    #[serde(default)]
+    pub receipt_pending: bool,
     #[serde(default)]
     pub qr_payload: String,
     #[serde(default)]
