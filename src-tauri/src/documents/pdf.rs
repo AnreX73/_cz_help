@@ -635,7 +635,6 @@ pub fn build(input: BuildInput<'_>) -> Result<Vec<u8>, String> {
         y += m.pad_v * 2.0 + m.line_h;
         p.hline(MARGIN_X, PAGE_W - MARGIN_X, y, 0.2, C_LINE);
     }
-    p.hline(MARGIN_X, PAGE_W - MARGIN_X, y, 0.35, C_LINE);
 
     y = draw_totals(
         &mut p,
@@ -793,6 +792,13 @@ fn draw_table_head(p: &mut Painter, y: f32, m: &Metrics) {
     p.text_right(cols[5].0 + cols[5].1, head_base, "Сумма", head_size, true, C_MUTED);
 }
 
+/// Базовая линия текста внутри строки таблицы: отступ сверху плюс
+/// приблизительная высота шрифта. Размер шрифта задан в пунктах, а
+/// координаты страницы — в миллиметрах, поэтому нужен `pt_to_mm`.
+fn row_baseline(y: f32, m: &Metrics, size_pt: f32) -> f32 {
+    y + m.pad_v + pt_to_mm(size_pt) * 0.86
+}
+
 fn draw_item_row(
     p: &mut Painter,
     idx: usize,
@@ -803,8 +809,8 @@ fn draw_item_row(
 ) -> f32 {
     let cols = columns();
     let row_h = m.pad_v * 2.0 + lines.len() as f32 * m.line_h;
-    let mut ly = y + m.pad_v + m.name * 0.86;
-    let cell_base = y + m.pad_v + m.cell * 0.86;
+    let mut ly = row_baseline(y, m, m.name);
+    let cell_base = row_baseline(y, m, m.cell);
     for (i, line) in lines.iter().enumerate() {
         if i == 0 {
             p.text(cols[0].0 + 1.0, ly, &(idx + 1).to_string(), m.cell, false, C_TEXT);
@@ -1120,6 +1126,26 @@ mod tests {
             })
             .unwrap_or_else(|e| panic!("без чека, {items} позиций: {e}"));
             assert!(bytes.len() > 5_000, "без чека, {items} позиций: PDF слишком мал");
+        }
+    }
+
+    #[test]
+    fn item_row_text_stays_inside_separators() {
+        for scale in [1.0f32, 0.94, 0.88, 0.82, 0.76] {
+            let m = Metrics::new(scale);
+            let row_h = m.pad_v * 2.0 + m.line_h;
+            for size in [m.name, m.cell] {
+                let baseline = row_baseline(0.0, &m, size);
+                let glyph = pt_to_mm(size);
+                assert!(
+                    baseline - glyph > 0.0,
+                    "текст вышел за верх строки (scale {scale})"
+                );
+                assert!(
+                    baseline + glyph * 0.25 < row_h,
+                    "разделитель пересекает текст (scale {scale})"
+                );
+            }
         }
     }
 }
